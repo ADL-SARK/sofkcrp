@@ -1,146 +1,175 @@
+--[[
+完整可 loadstring 的通知模块
+链式用法：
+local Shattuck = loadstring(game:HttpGet("你的URL"))()
+Shattuck.Notify():Script("上文本"):Name("下文本"):rainbow(true):transparency(false):Duration(5):Show()
+]]
+
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 
 local Shattuck = {}
-
 local activeNotifications = {}
 
--- 辅助函数：线性插值彩虹颜色
-local blendColors = {
-    Color3.fromRGB(0, 255, 255), 
-    Color3.fromRGB(255, 0, 255), 
-    Color3.fromRGB(255, 105, 180)
-}
-local function interpolateColors(colors, t)
-    local count = #colors
-    local segment = math.floor(t * count) % count + 1
-    local nextSegment = (segment % count) + 1
-    local alpha = (t * count) % 1
-    local c1, c2 = colors[segment], colors[nextSegment]
-    return Color3.new(
-        c1.R + (c2.R - c1.R) * alpha,
-        c1.G + (c2.G - c1.G) * alpha,
-        c1.B + (c2.B - c1.B) * alpha
-    )
+-- 内联简单 Creator 功能
+local Creator = {}
+function Creator.New(Class, Props, Children)
+    local Inst = Instance.new(Class)
+    if Props then
+        for k,v in pairs(Props) do
+            Inst[k] = v
+        end
+    end
+    if Children then
+        for _,c in pairs(Children) do
+            c.Parent = Inst
+        end
+    end
+    return Inst
+end
+function Creator.Tween(Obj, Time, Props)
+    local info = TweenInfo.new(Time, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+    local tween = TweenService:Create(Obj, info, Props)
+    tween:Play()
+    return tween
 end
 
--- 主通知函数
+-- 配置
+local CONFIG = {
+    WIDTH = 220,
+    SPACING = 8,
+    OFFSET_X = 20,
+    OFFSET_Y = 20,
+    CORNER_RADIUS = 8,
+    TITLE = {FONT=Enum.Font.GothamBold, SIZE=16, COLOR=Color3.fromRGB(255,255,255)},
+    MESSAGE = {FONT=Enum.Font.Gotham, SIZE=14, COLOR=Color3.fromRGB(220,220,220)},
+    ANIMATION = {DURATION=0.4, STYLE=Enum.EasingStyle.Elastic, DIR=Enum.EasingDirection.Out}
+}
+
+local blendColors = {Color3.fromRGB(0,255,255), Color3.fromRGB(255,0,255), Color3.fromRGB(255,105,180)}
+
+-- 通知实例类
+local NotifyClass = {}
+NotifyClass.__index = NotifyClass
+
 function Shattuck.Notify()
-    local Notification = {}
-    Notification.TitleText = ""
-    Notification.NameText = ""
-    Notification.DurationTime = 5
-    Notification.Rainbow = false
-    Notification.Transparent = false
+    local self = setmetatable({}, NotifyClass)
+    self._Script = ""
+    self._Name = ""
+    self._Rainbow = false
+    self._Transparency = false
+    self._Duration = 4
+    return self
+end
 
-    function Notification:Script(txt)
-        self.TitleText = txt
-        return self
+function NotifyClass:Script(text) self._Script = text or "" return self end
+function NotifyClass:Name(text) self._Name = text or "" return self end
+function NotifyClass:rainbow(value) self._Rainbow = value or false return self end
+function NotifyClass:transparency(value) self._Transparency = value or false return self end
+function NotifyClass:Duration(value) self._Duration = value or 4 return self end
+
+function NotifyClass:Show()
+    local player = Players.LocalPlayer
+    local gui = player:WaitForChild("PlayerGui"):FindFirstChild("NotificationGui")
+    if not gui then
+        gui = Instance.new("ScreenGui")
+        gui.Name = "NotificationGui"
+        gui.IgnoreGuiInset = true
+        gui.ResetOnSpawn = false
+        gui.DisplayOrder = 1000
+        gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+        gui.Parent = player.PlayerGui
     end
-    function Notification:Name(txt)
-        self.NameText = txt
-        return self
-    end
-    function Notification:rainbow(val)
-        self.Rainbow = val
-        return self
-    end
-    function Notification:transparency(val)
-        self.Transparent = val
-        return self
-    end
-    function Notification:Duration(sec)
-        self.DurationTime = sec or 5
-        return self
-    end
 
-    function Notification:Show()
-        local player = Players.LocalPlayer
-        local playerGui = player:WaitForChild("PlayerGui")
+    local frame = Creator.New("Frame", {
+        Size = UDim2.new(0, CONFIG.WIDTH, 0, 60),
+        Position = UDim2.new(1, CONFIG.WIDTH, 0, CONFIG.OFFSET_Y),
+        AnchorPoint = Vector2.new(1,0),
+        BackgroundColor3 = Color3.fromRGB(0,0,0),
+        BackgroundTransparency = self._Transparency and 0.7 or 0,
+        BorderSizePixel = 0,
+        ZIndex = 10,
+        Parent = gui
+    }, {
+        Creator.New("UICorner",{CornerRadius=UDim.new(0,CONFIG.CORNER_RADIUS)})
+    })
 
-        -- 创建主框架
-        local frame = Instance.new("Frame")
-        frame.BackgroundColor3 = self.Transparent and Color3.fromRGB(0,0,0) or Color3.fromRGB(0,0,0)
-        frame.BackgroundTransparency = self.Transparent and 0.5 or 0
-        frame.AnchorPoint = Vector2.new(1, 0)
-        frame.Position = UDim2.new(1, -20, 0, 20)
-        frame.Size = UDim2.new(0, 250, 0, 0) -- 初始高度0，后面自动调整
-        frame.Parent = playerGui
-
-        local uicorner = Instance.new("UICorner")
-        uicorner.CornerRadius = UDim.new(0, 5)
-        uicorner.Parent = frame
-
-        local titleLabel = Instance.new("TextLabel")
-        titleLabel.Text = self.TitleText
-        titleLabel.Font = Enum.Font.GothamBold
-        titleLabel.TextSize = 18
-        titleLabel.TextColor3 = Color3.fromRGB(255,255,255)
-        titleLabel.BackgroundTransparency = 1
-        titleLabel.Size = UDim2.new(1, -20, 0, 0)
-        titleLabel.Position = UDim2.new(0, 10, 0, 10)
-        titleLabel.TextWrapped = true
-        titleLabel.Parent = frame
-
-        local nameLabel = Instance.new("TextLabel")
-        nameLabel.Text = self.NameText
-        nameLabel.Font = Enum.Font.Gotham
-        nameLabel.TextSize = 14
-        nameLabel.TextColor3 = Color3.fromRGB(220,220,220)
-        nameLabel.BackgroundTransparency = 1
-        nameLabel.Size = UDim2.new(1, -20, 0, 0)
-        nameLabel.Position = UDim2.new(0, 10, 0, 0)
-        nameLabel.TextWrapped = true
-        nameLabel.Parent = frame
-
-        -- 自动调整高度
-        titleLabel:GetPropertyChangedSignal("TextBounds"):Connect(function()
-            local totalHeight = 10 + titleLabel.TextBounds.Y + (self.NameText ~= "" and 4 + nameLabel.TextBounds.Y or 0) + 10
-            frame.Size = UDim2.new(0, 250, 0, totalHeight)
-            nameLabel.Position = UDim2.new(0, 10, 0, 10 + titleLabel.TextBounds.Y + 4)
+    local strokeConnection
+    if self._Rainbow then
+        local stroke = Creator.New("UIStroke",{Thickness=2, ApplyStrokeMode=Enum.ApplyStrokeMode.Border, Color=blendColors[1], Parent=frame})
+        local colorTime = 0
+        strokeConnection = RunService.RenderStepped:Connect(function(dt)
+            colorTime += dt*0.5
+            stroke.Color = blendColors[math.random(1,#blendColors)]
+            if not frame or not frame.Parent then strokeConnection:Disconnect() end
         end)
+    end
 
-        nameLabel:GetPropertyChangedSignal("TextBounds"):Connect(function()
-            local totalHeight = 10 + titleLabel.TextBounds.Y + (self.NameText ~= "" and 4 + nameLabel.TextBounds.Y or 0) + 10
-            frame.Size = UDim2.new(0, 250, 0, totalHeight)
-        end)
+    local titleLabel = Creator.New("TextLabel",{
+        Size = UDim2.new(1,-16,0,24),
+        Position = UDim2.new(0,8,0,8),
+        BackgroundTransparency = 1,
+        Text = self._Script,
+        Font = CONFIG.TITLE.FONT,
+        TextSize = CONFIG.TITLE.SIZE,
+        TextColor3 = CONFIG.TITLE.COLOR,
+        TextXAlignment = Enum.TextXAlignment.Center,
+        TextTransparency = 1,
+        ZIndex = 11,
+        Parent = frame
+    })
 
-        -- 彩虹边框
-        local stroke
-        if self.Rainbow then
-            stroke = Instance.new("UIStroke")
-            stroke.Thickness = 2
-            stroke.Parent = frame
-            RunService.RenderStepped:Connect(function(dt)
-                stroke.Color = interpolateColors(blendColors, tick()%1)
-            end)
+    local messageLabel = Creator.New("TextLabel",{
+        Size = UDim2.new(1,-16,0,24),
+        Position = UDim2.new(0,8,0,28),
+        BackgroundTransparency = 1,
+        Text = self._Name,
+        Font = CONFIG.MESSAGE.FONT,
+        TextSize = CONFIG.MESSAGE.SIZE,
+        TextColor3 = CONFIG.MESSAGE.COLOR,
+        TextWrapped = true,
+        TextXAlignment = Enum.TextXAlignment.Center,
+        TextYAlignment = Enum.TextYAlignment.Top,
+        TextTransparency = 1,
+        ZIndex = 11,
+        Parent = frame
+    })
+
+    local function adjustHeight()
+        local titleH = titleLabel.TextBounds.Y
+        local msgH = messageLabel.TextBounds.Y
+        frame.Size = UDim2.new(0, CONFIG.WIDTH, 0, math.max(60, 8+titleH+4+msgH+8))
+        local yOffset = CONFIG.OFFSET_Y
+        for i,v in ipairs(activeNotifications) do
+            if v.frame and v.frame.Parent then
+                Creator.Tween(v.frame,0.3,{Position=UDim2.new(1,-CONFIG.OFFSET_X,0,yOffset)})
+                yOffset = yOffset + v.frame.AbsoluteSize.Y + CONFIG.SPACING
+            end
         end
+    end
+    titleLabel:GetPropertyChangedSignal("TextBounds"):Connect(adjustHeight)
+    messageLabel:GetPropertyChangedSignal("TextBounds"):Connect(adjustHeight)
+    adjustHeight()
 
-        -- Tween显示动画
-        frame.Position = UDim2.new(1, 300, 0, 20)
-        TweenService:Create(frame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-            Position = UDim2.new(1, -20, 0, 20)
-        }):Play()
+    Creator.Tween(frame, CONFIG.ANIMATION.DURATION,{Position=UDim2.new(1,-CONFIG.OFFSET_X,0,CONFIG.OFFSET_Y)})
+    Creator.Tween(titleLabel, 0.3,{TextTransparency=0})
+    Creator.Tween(messageLabel, 0.3,{TextTransparency=0})
 
-        table.insert(activeNotifications, frame)
+    table.insert(activeNotifications,{frame=frame})
 
-        -- 自动关闭
-        task.delay(self.DurationTime, function()
-            TweenService:Create(frame, TweenInfo.new(0.3), {Position = UDim2.new(1, 300, 0, 20)}):Play()
-            task.wait(0.3)
+    task.delay(self._Duration,function()
+        Creator.Tween(frame,0.4,{Position=UDim2.new(1, CONFIG.WIDTH,0,CONFIG.OFFSET_Y)})
+        Creator.Tween(titleLabel,0.3,{TextTransparency=1})
+        Creator.Tween(messageLabel,0.3,{TextTransparency=1})
+        task.delay(0.4,function()
             frame:Destroy()
-            -- 移除已关闭通知
-            for i, v in ipairs(activeNotifications) do
-                if v == frame then
-                    table.remove(activeNotifications, i)
-                    break
-                end
+            if strokeConnection then strokeConnection:Disconnect() end
+            for i,v in ipairs(activeNotifications) do
+                if v.frame == frame then table.remove(activeNotifications,i) break end
             end
         end)
-    end
-
-    return Notification
+    end)
 end
 
 return Shattuck
